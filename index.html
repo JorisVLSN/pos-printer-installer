@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mews POS · Printer Support</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0e0f11; --surface: #16181c; --surface2: #1e2026; --border: #2a2d35;
+    --accent: #00c8a0; --accent-dim: rgba(0,200,160,0.12); --accent-glow: rgba(0,200,160,0.25);
+    --text: #e8eaf0; --text-muted: #7a7f8e; --text-dim: #4a4f5e;
+    --user-bubble: #1c2a3a; --user-border: #1e4a7a; --ai-bubble: #161a1f;
+    --error: #ff6b6b;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; font-size: 15px; line-height: 1.7; overflow: hidden; }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(0,200,160,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,160,0.03) 1px, transparent 1px);
+    background-size: 40px 40px; pointer-events: none; z-index: 0;
+  }
+  #app { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100vh; max-width: 680px; margin: 0 auto; }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); background: rgba(14,15,17,0.97); backdrop-filter: blur(12px); flex-shrink: 0; }
+  .logo-mark { width: 30px; height: 30px; background: var(--accent); border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .logo-mark svg { width: 16px; height: 16px; }
+  .header-text h1 { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.02em; }
+  .header-text p { font-size: 11px; color: var(--text-muted); }
+  .header-meta { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .property-badge { font-size: 11px; color: var(--accent); background: var(--accent-dim); border: 1px solid rgba(0,200,160,0.3); padding: 2px 8px; border-radius: 10px; font-family: 'Syne', sans-serif; font-weight: 600; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); animation: pulse 2.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 8px var(--accent-glow);}50%{opacity:.6;box-shadow:0 0 16px var(--accent-glow);} }
+
+  #step-progress { display: none; flex-shrink: 0; padding: 10px 18px; border-bottom: 1px solid var(--border); background: rgba(14,15,17,0.95); }
+  #step-progress.visible { display: block; }
+  .step-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .step-label { font-size: 11px; color: var(--accent); font-family: 'Syne', sans-serif; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .step-count { font-size: 11px; color: var(--text-muted); }
+  .progress-track { height: 3px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.5s ease; }
+
+  #messages { flex: 1; overflow-y: auto; padding: 18px 16px; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
+  #messages::-webkit-scrollbar { width: 3px; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .msg { display: flex; gap: 10px; max-width: 96%; animation: fadeUp 0.2s ease-out; }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:translateY(0);} }
+  .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .msg.ai   { align-self: flex-start; }
+
+  .avatar { width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; font-family: 'Syne', sans-serif; margin-top: 3px; }
+  .msg.ai .avatar { background: var(--accent-dim); border: 1px solid var(--accent); color: var(--accent); }
+  .msg.user .avatar { background: var(--user-bubble); border: 1px solid var(--user-border); color: #5b9bd5; }
+
+  .bubble { padding: 12px 16px; border-radius: 12px; line-height: 1.75; font-size: 14px; max-width: 100%; word-wrap: break-word; }
+  .msg.ai .bubble { background: var(--ai-bubble); border: 1px solid var(--border); color: var(--text); border-top-left-radius: 3px; }
+  .msg.user .bubble { background: var(--user-bubble); border: 1px solid var(--user-border); color: #c8dff5; border-top-right-radius: 3px; }
+  .bubble strong { color: var(--accent); font-weight: 500; }
+  .bubble code { background: rgba(0,200,160,0.1); border: 1px solid rgba(0,200,160,0.2); padding: 2px 6px; border-radius: 4px; font-size: 13px; color: var(--accent); }
+  .bubble a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(0,200,160,0.3); }
+  .bubble hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+  .bubble ol, .bubble ul { padding-left: 20px; margin: 8px 0; }
+  .bubble li { margin: 5px 0; }
+
+  /* Error bubble */
+  .bubble.error-bubble { border-color: var(--error); background: rgba(255,107,107,0.06); }
+  .bubble.error-bubble strong { color: var(--error); }
+  .retry-btn { display: inline-block; margin-top: 10px; background: none; border: 1px solid var(--error); color: var(--error); padding: 5px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: 'DM Mono', monospace; transition: all 0.15s; }
+  .retry-btn:hover { background: rgba(255,107,107,0.1); }
+
+  /* Step cards */
+  .step-card { background: var(--surface2); border: 1px solid var(--accent); border-radius: 10px; padding: 14px 16px; margin-top: 4px; }
+  .step-card .step-num { font-size: 11px; color: var(--accent); font-family: 'Syne', sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .step-card .step-action { font-size: 14px; line-height: 1.7; color: var(--text); }
+  .step-card .step-action strong { color: var(--accent); }
+  .done-btn { display: inline-block; margin-top: 12px; background: var(--accent); color: #0e0f11; border: none; border-radius: 8px; padding: 9px 20px; font-size: 13px; font-weight: 700; font-family: 'Syne', sans-serif; cursor: pointer; transition: all 0.15s; letter-spacing: 0.02em; }
+  .done-btn:hover { background: #00e0b0; transform: scale(1.03); }
+  .done-btn:disabled { background: var(--border); color: var(--text-dim); cursor: not-allowed; transform: none; }
+
+  /* Mailto escalation box */
+  .mailto-box { margin-top: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .mailto-box-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; background: rgba(0,200,160,0.06); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); font-family: 'Syne', sans-serif; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+  .mailto-link { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: #0e0f11; padding: 5px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; font-family: 'Syne', sans-serif; text-decoration: none; transition: all 0.15s; }
+  .mailto-link:hover { background: #00e0b0; }
+  .mailto-box-body { padding: 12px; font-size: 12.5px; line-height: 1.75; color: var(--text-muted); white-space: pre-wrap; font-style: italic; }
+
+  /* Streaming cursor */
+  .streaming-cursor { display: inline-block; width: 2px; height: 14px; background: var(--accent); margin-left: 2px; vertical-align: middle; animation: blink-cur 0.7s step-end infinite; }
+  @keyframes blink-cur { 0%,100%{opacity:1;}50%{opacity:0;} }
+
+  /* Chips */
+  #chips-area { padding: 0 16px 12px; flex-shrink: 0; }
+  #chips-area.hidden { display: none; }
+  .chips-label { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip { background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); padding: 8px 14px; border-radius: 20px; font-size: 13px; cursor: pointer; font-family: 'DM Mono', monospace; transition: all 0.15s; white-space: nowrap; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+  /* Typing */
+  .typing { display: flex; align-items: center; gap: 4px; padding: 12px 16px; }
+  .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.2s ease-in-out infinite; }
+  .typing span:nth-child(2){animation-delay:.2s;} .typing span:nth-child(3){animation-delay:.4s;}
+  @keyframes blink{0%,80%,100%{opacity:.2;transform:scale(.8);}40%{opacity:1;transform:scale(1);}}
+
+  /* Input */
+  #input-area { padding: 10px 16px 14px; border-top: 1px solid var(--border); background: rgba(14,15,17,0.97); backdrop-filter: blur(12px); flex-shrink: 0; }
+  #input-row { display: flex; gap: 10px; align-items: flex-end; }
+  #user-input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 14px; resize: none; min-height: 44px; max-height: 120px; line-height: 1.5; outline: none; transition: border-color 0.2s; }
+  #user-input:focus { border-color: var(--accent); }
+  #user-input::placeholder { color: var(--text-dim); }
+  #user-input:disabled { opacity: 0.45; cursor: not-allowed; }
+  #send-btn { width: 44px; height: 44px; border-radius: 10px; background: var(--accent); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.15s; }
+  #send-btn:hover { background: #00e0b0; transform: scale(1.04); }
+  #send-btn:disabled { background: var(--border); cursor: not-allowed; transform: none; }
+  #send-btn svg { width: 17px; height: 17px; }
+  .hint-text { font-size: 11px; color: var(--text-dim); text-align: center; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo-mark">
+      <svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="5" width="14" height="9" rx="2" stroke="#0e0f11" stroke-width="1.5"/>
+        <path d="M6 5V4a3 3 0 016 0v1" stroke="#0e0f11" stroke-width="1.5"/>
+        <circle cx="9" cy="9.5" r="1.5" fill="#0e0f11"/>
+      </svg>
+    </div>
+    <div class="header-text">
+      <h1>Mews POS · Printer Support</h1>
+      <p id="header-sub">Powered by AI · Available 24/7</p>
+    </div>
+    <div class="header-meta">
+      <span id="property-badge" class="property-badge" style="display:none"></span>
+      <div class="status-dot"></div>
+    </div>
+  </header>
+
+  <div id="step-progress">
+    <div class="step-header">
+      <span class="step-label">Static IP Setup</span>
+      <span class="step-count" id="step-count">Step 1 of 5</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:20%"></div></div>
+  </div>
+
+  <div id="messages"></div>
+
+  <div id="chips-area">
+    <p class="chips-label">What's the issue? Tap to start:</p>
+    <div class="chips">
+      <button class="chip" onclick="sendChip('printer-not-found')">🔌 Printer not found</button>
+      <button class="chip" onclick="sendChip('static-ip')">📡 Set static IP</button>
+      <button class="chip" onclick="sendChip('not-printing')">🖨️ Not printing</button>
+      <button class="chip" onclick="sendChip('compatibility')">✅ Check compatibility</button>
+    </div>
+  </div>
+
+  <div id="input-area">
+    <div id="input-row">
+      <textarea id="user-input" placeholder="Describe your printer issue…" rows="1"></textarea>
+      <button id="send-btn" aria-label="Send">
+        <svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 9l12-6-4 6 4 6-12-6z" fill="white"/>
+        </svg>
+      </button>
+    </div>
+    <p class="hint-text">Enter to send · Shift+Enter for new line</p>
+  </div>
+</div>
+
+<script>
+const SLACK_CHANNEL = 'C0B692J817S';
+const MEWS_SUPPORT_EMAIL = 'support@mews.com';
+const MAX_RETRIES = 2;
+
+// --- URL param parsing ---
+const params = new URLSearchParams(window.location.search);
+const urlProperty = params.get('property') ? decodeURIComponent(params.get('property')) : null;
+const urlStatus   = params.get('status')   ? decodeURIComponent(params.get('status'))   : null;
+// status values: 'onboarding' | 'live'
+
+const sessionCtx = {
+  property: urlProperty,
+  status: urlStatus
+};
+
+// Show property badge in header if known
+if (urlProperty) {
+  const badge = document.getElementById('property-badge');
+  badge.textContent = urlProperty;
+  badge.style.display = 'inline-block';
+}
+
+// --- IP Steps (merged 1+2, now 5 steps) ---
+const IP_STEPS = [
+  {
+    num: 'Step 1 of 5',
+    action: `<strong>Print the self-test</strong> to find the printer's IP address.<br><br>
+Turn the printer <strong>off</strong>. Hold the <strong>FEED button</strong>, then turn it back <strong>on</strong> while keeping FEED held. Hold for ~4 seconds until it starts printing, then let go.<br><br>
+Two pages print. On the <strong>second page</strong>, find <em>"Current IP Parameters Status"</em> and note down:<br>
+• IP Address &nbsp;• Subnet Mask &nbsp;• Default Gateway<br><br>
+Then — on a computer or tablet <strong>on the same network</strong> — open a browser (Chrome, Safari, or Edge) and type that IP address into the address bar. Press Enter.<br><br>
+A login page should appear. Reply with your three values and let me know when you see the login page.`,
+    doneLabel: 'I have the values and see the login page →'
+  },
+  {
+    num: 'Step 2 of 5',
+    action: `Log in with these default credentials:<br><br>
+<strong>Username:</strong> <code>root</code><br>
+<strong>Password:</strong> <code>public</code><br><br>
+If these are rejected, the password has been changed — tap the button below and we'll escalate.`,
+    doneLabel: "I'm logged in →"
+  },
+  {
+    num: 'Step 3 of 5',
+    action: `Find the section called <strong>IP Configuration</strong> or <strong>TCP/IP Settings</strong>.<br><br>
+Change the mode from <strong>DHCP</strong> to <strong>Static</strong>.<br><br>
+For the new static IP: take your current IP and change only the <strong>last number</strong> to something high — use <strong>200</strong> or <strong>210</strong>.<br>
+Example: current IP is <code>192.168.1.45</code> → assign <code>192.168.1.200</code><br><br>
+Keep the <strong>Subnet Mask</strong> and <strong>Default Gateway</strong> exactly as printed. Click <strong>Submit</strong> or <strong>Save</strong>.`,
+    doneLabel: 'Saved →'
+  },
+  {
+    num: 'Step 4 of 5',
+    action: `Find the option <strong>Save → Configuration Printing → Restart device</strong> and click <strong>Execute</strong>.<br><br>
+The printer will reboot — takes about 30–60 seconds.<br><br>
+Once it's back on, print another self-test (same FEED method from Step 1) to confirm the new IP is showing.`,
+    doneLabel: 'Printer is back on, new IP confirmed →'
+  },
+  {
+    num: 'Step 5 of 5',
+    action: `In <strong>Mews POS</strong>, go to <strong>Settings → Printers</strong>.<br><br>
+Find your printer and update its IP address to the new static one. Save, then do a test print.`,
+    doneLabel: 'It worked! ✓'
+  }
+];
+
+let conversationHistory = [];
+let sessionEnded = false;
+let chipsHidden = false;
+let lastFailedMessage = null;
+
+const messagesEl = document.getElementById('messages');
+const inputEl    = document.getElementById('user-input');
+const sendBtn    = document.getElementById('send-btn');
+const chipsArea  = document.getElementById('chips-area');
+
+function hideChips() { if (!chipsHidden) { chipsArea.classList.add('hidden'); chipsHidden = true; } }
+
+function showProgressBar(step, total) {
+  const el = document.getElementById('step-progress');
+  el.classList.add('visible');
+  document.getElementById('progress-fill').style.width = ((step / total) * 100) + '%';
+  document.getElementById('step-count').textContent = step >= total ? 'Complete ✓' : `Step ${step} of ${total}`;
+}
+
+// --- Markdown formatter ---
+function fmt(text) {
+  let f = text;
+  f = f.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  f = f.replace(/`([^`]+)`/g, '<code>$1</code>');
+  f = f.replace(/\[([^\]]+)\]\((https?:[^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  f = f.replace(/^---$/gm, '<hr>');
+  f = f.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+  f = f.replace(/(<li>[\s\S]*?<\/li>\n?)+/g, m => `<ol>${m}</ol>`);
+  f = f.replace(/^[-•] (.+)$/gm, '<li>$1</li>');
+  f = f.replace(/(<li>[\s\S]*?<\/li>\n?)+/g, m => m.includes('<ol>') ? m : `<ul>${m}</ul>`);
+  f = f.replace(/\n/g, '<br>');
+  return f;
+}
+
+function stripMeta(text) {
+  return text
+    .replace(/\[ESCALATE:[^\]]+\]/g, '')
+    .replace(/\[START_IP_FLOW\]/g, '')
+    .replace(/\[SESSION_COMPLETE\].*/gs, '')
+    .replace(/\{"property":[\s\S]*?\}/, '')
+    .trim();
+}
+
+// --- Escalation email rendered as mailto box ---
+function buildMailtoBox(subject, body, recipient, label) {
+  const encoded = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const box = document.createElement('div');
+  box.className = 'mailto-box';
+  box.innerHTML = `
+    <div class="mailto-box-header">
+      <span>📧 ${label}</span>
+      <a class="mailto-link" href="${encoded}">Open in email app ↗</a>
+    </div>
+    <div class="mailto-box-body">${body}</div>`;
+  return box;
+}
+
+// Detect [ESCALATE:onboarding] or [ESCALATE:live] tags from AI
+function detectEscalation(text) {
+  const m = text.match(/\[ESCALATE:(onboarding|live)\]/);
+  return m ? m[1] : null;
+}
+
+function addMessage(role, content) {
+  const msgEl = document.createElement('div');
+  msgEl.className = `msg ${role}`;
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = role === 'ai' ? 'M' : 'YOU';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerHTML = fmt(stripMeta(content));
+  msgEl.appendChild(avatar);
+  msgEl.appendChild(bubble);
+  messagesEl.appendChild(msgEl);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return bubble;
+}
+
+function addErrorMessage(userMsg) {
+  const msgEl = document.createElement('div');
+  msgEl.className = 'msg ai';
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar'; avatar.textContent = 'M';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble error-bubble';
+  bubble.innerHTML = `<strong>Something went wrong.</strong> This could be a slow connection or a temporary issue.<br><br>`;
+  const retryBtn = document.createElement('button');
+  retryBtn.className = 'retry-btn';
+  retryBtn.textContent = '↺ Try again';
+  retryBtn.onclick = () => {
+    msgEl.remove();
+    if (userMsg) retryChat(userMsg);
+  };
+  bubble.appendChild(retryBtn);
+  msgEl.appendChild(avatar); msgEl.appendChild(bubble);
+  messagesEl.appendChild(msgEl);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function createStreamingBubble() {
+  const msgEl = document.createElement('div');
+  msgEl.className = 'msg ai'; msgEl.id = 'streaming-msg';
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar'; avatar.textContent = 'M';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerHTML = '<span class="streaming-cursor"></span>';
+  msgEl.appendChild(avatar); msgEl.appendChild(bubble);
+  messagesEl.appendChild(msgEl);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return bubble;
+}
+
+function finaliseStreamingBubble(bubble, fullText) {
+  const clean = stripMeta(fullText);
+  bubble.innerHTML = fmt(clean);
+
+  // Check for escalation tag and append mailto box
+  const escalationType = detectEscalation(fullText);
+  if (escalationType) appendEscalationBox(bubble, escalationType);
+
+  const el = document.getElementById('streaming-msg');
+  if (el) el.removeAttribute('id');
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function appendEscalationBox(bubble, type) {
+  const prop = sessionCtx.property || '[Your Property Name]';
+  const isOnboarding = type === 'onboarding';
+  const recipient = isOnboarding ? '' : MEWS_SUPPORT_EMAIL;
+  const label = isOnboarding ? 'Send to your Mews onboarding manager' : `Send to ${MEWS_SUPPORT_EMAIL}`;
+  const subject = `Printer issue – ${prop}`;
+  const body = isOnboarding
+    ? `Hi,\n\nI've been working through the printer support tool but haven't been able to resolve the issue.\n\nProperty: ${prop}\nIssue: [please describe]\nSteps already tried: [list]\n\nCould you help?\n\nBest,\n${prop}`
+    : `Hi Mews Support,\n\nI need help with a printer issue.\n\nProperty: ${prop}\nIssue: [please describe]\nSteps already tried: [list]\n\nBest,\n${prop}`;
+  bubble.appendChild(buildMailtoBox(subject, body, recipient, label));
+}
+
+function showIPStep(stepIndex) {
+  const step = IP_STEPS[stepIndex];
+  showProgressBar(stepIndex + 1, IP_STEPS.length);
+
+  const msgEl = document.createElement('div');
+  msgEl.className = 'msg ai';
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar'; avatar.textContent = 'M';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  const card = document.createElement('div');
+  card.className = 'step-card';
+  card.innerHTML = `<div class="step-num">${step.num}</div><div class="step-action">${step.action}</div>`;
+  const btn = document.createElement('button');
+  btn.className = 'done-btn';
+  btn.textContent = step.doneLabel;
+  btn.onclick = () => {
+    btn.disabled = true; btn.textContent = '✓ Done';
+    const next = stepIndex + 1;
+    if (next < IP_STEPS.length) setTimeout(() => showIPStep(next), 300);
+    else { showProgressBar(IP_STEPS.length, IP_STEPS.length); setTimeout(() => finishIPFlow(), 300); }
+  };
+  card.appendChild(btn);
+  bubble.appendChild(card);
+  msgEl.appendChild(avatar); msgEl.appendChild(bubble);
+  messagesEl.appendChild(msgEl);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+async function finishIPFlow() {
+  await streamAIMessage(null, `The static IP is set and Mews POS is updated. Your printer will now stay on the same address and won't drop after a network restart.\n\nIs everything working?`);
+}
+
+// --- Core API call with timeout and retry ---
+async function callAPI(messages, retryCount = 0) {
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: buildSystemPrompt(),
+        messages
+      })
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    return data.content?.[0]?.text || '';
+  } catch(err) {
+    if (retryCount < MAX_RETRIES) {
+      await new Promise(r => setTimeout(r, 800 * (retryCount + 1)));
+      return callAPI(messages, retryCount + 1);
+    }
+    throw err;
+  }
+}
+
+async function streamAIMessage(userMessage, injectedContent = null) {
+  sendBtn.disabled = true; inputEl.disabled = true;
+
+  if (userMessage) conversationHistory.push({ role: 'user', content: userMessage });
+
+  // Injected content (local, no API call)
+  if (injectedContent) {
+    addMessage('ai', injectedContent);
+    conversationHistory.push({ role: 'assistant', content: injectedContent });
+    sendBtn.disabled = false; inputEl.disabled = false; inputEl.focus();
+    return;
+  }
+
+  // Show typing indicator
+  const typingEl = document.createElement('div');
+  typingEl.className = 'msg ai'; typingEl.id = 'typing-indicator';
+  typingEl.innerHTML = `<div class="avatar">M</div><div class="bubble typing"><span></span><span></span><span></span></div>`;
+  messagesEl.appendChild(typingEl);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  try {
+    const fullText = await callAPI(conversationHistory);
+    typingEl.remove();
+
+    // IP flow trigger
+    if (fullText.includes('[START_IP_FLOW]')) {
+      conversationHistory.push({ role: 'assistant', content: '[START_IP_FLOW]' });
+      showIPStep(0);
+    } else {
+      const bubble = addMessage('ai', fullText);
+      const escalationType = detectEscalation(fullText);
+      if (escalationType) appendEscalationBox(bubble, escalationType);
+      conversationHistory.push({ role: 'assistant', content: fullText });
+    }
+
+    // Session complete
+    if (fullText.includes('[SESSION_COMPLETE]') && !sessionEnded) {
+      sessionEnded = true;
+      const jsonMatch = fullText.match(/\{"property":[\s\S]*?\}/);
+      let summary = { property: sessionCtx.property || 'Unknown', issue: 'Unknown', resolution: 'unknown', steps_taken: [] };
+      if (jsonMatch) { try { summary = { ...summary, ...JSON.parse(jsonMatch[0]) }; } catch(_) {} }
+      sendToSlack(summary);
+      inputEl.disabled = true;
+      inputEl.placeholder = 'Session ended — refresh to start over.';
+      sendBtn.disabled = true;
+      return;
+    }
+
+  } catch(err) {
+    typingEl.remove();
+    if (userMessage) conversationHistory.pop();
+    addErrorMessage(userMessage);
+    console.error(err);
+  } finally {
+    if (!sessionEnded) { sendBtn.disabled = false; inputEl.disabled = false; inputEl.focus(); }
+  }
+}
+
+function retryChat(msg) {
+  addMessage('user', msg);
+  streamAIMessage(msg);
+}
+
+function buildSystemPrompt() {
+  const propKnown  = !!sessionCtx.property;
+  const statKnown  = !!sessionCtx.status;
+  const propLine   = propKnown  ? `Property: ${sessionCtx.property}` : 'Property: unknown — ask naturally after first exchange.';
+  const statusLine = statKnown  ? `Setup status: ${sessionCtx.status === 'onboarding' ? 'still being set up by Mews team' : 'already live, no Mews team involvement'}` : 'Setup status: unknown — ask naturally after first exchange.';
+
+  return `You are a Mews POS printer support assistant helping hotel staff fix printer issues without calling anyone.
+
+## PERSONALITY
+Plain language. One idea per message. No filler. Never say "certainly", "great question", or "of course".
+
+## SESSION CONTEXT
+${propLine}
+${statusLine}
+
+Only ask for missing context (property name, setup status) naturally after giving your first helpful answer — never as a gating question before helping. Phrase setup status as: "Is a Mews team member still actively helping you set things up, or are you fully up and running on your own?"
+
+## SUPPORTED PRINTERS
+Star Micronics LAN models only:
+- TSP143LAN — 80mm receipt
+- TSP650LAN — 58mm receipt
+- SP500LAN — 80mm kitchen (impact)
+- SP700LAN — 80mm kitchen (impact)
+- mc-Print2 — 58mm receipt
+- mc-Print3 — 58mm or 80mm receipt
+
+## FLOW 1: COMPATIBILITY
+Check model against list. If compatible: confirm + paper size. If not: say unsupported, recommend nearest match. For purchasing: suggest searching model name on Amazon or local IT supplier.
+
+## FLOW 2: STATIC IP
+Reply with exactly [START_IP_FLOW] and nothing else. The UI handles the steps.
+
+## FLOW 3: TROUBLESHOOTING
+
+Not found by Mews POS:
+1. On and LAN cable connected?
+2. Print self-test (hold FEED on power-on) — note IP
+3. Does that IP match Mews POS → Settings → Printers exactly?
+4. Same network as POS device?
+5. Restart printer
+6. IP shows 0.0.0.0? → check ethernet cable and router port
+
+Not printing:
+1. Paper loaded? (glossy side down for TSP143/TSP650/mc-Print)
+2. SP500/SP700: ribbon installed?
+3. Test print from Mews POS
+4. Restart printer
+
+Wrong output:
+1. Paper width match printer model?
+2. Correct model in Mews POS → Settings → Printers?
+3. Delete and re-add printer in Mews POS
+
+Error lights:
+- Solid red: jam or out of paper
+- Flashing red: cover open or paper wrong
+- No lights: check power cable
+
+## ESCALATION
+When unresolved, determine type from session context (or ask if unknown), then output the tag and a short message:
+
+IF onboarding: say "Here's a pre-filled email for your Mews onboarding manager — tap to open it in your email app." then output [ESCALATE:onboarding]
+IF live: say "Here's a pre-filled email for Mews Support — tap to open it in your email app." then output [ESCALATE:live]
+
+Do NOT write out email content yourself. The UI generates it.
+
+## SESSION END
+When resolved or escalated output:
+[SESSION_COMPLETE]
+{"property":"${sessionCtx.property || '[name]'}","status":"[onboarding|live|unknown]","issue":"[one sentence]","resolution":"[resolved|escalated|unresolved]","steps_taken":["step1"]}`;
+}
+
+const CHIP_MESSAGES = {
+  'printer-not-found': 'My printer is not being found by Mews POS.',
+  'static-ip':         'I need to set a static IP address on my printer.',
+  'not-printing':      'My printer is connected but not printing.',
+  'compatibility':     'I want to check if my printer is compatible with Mews POS, or find one to buy.'
+};
+
+function sendChip(key) {
+  hideChips();
+  const text = CHIP_MESSAGES[key];
+  addMessage('user', text);
+  streamAIMessage(text);
+}
+
+function handleSend() {
+  const msg = inputEl.value.trim();
+  if (!msg || sendBtn.disabled) return;
+  hideChips();
+  addMessage('user', msg);
+  inputEl.value = ''; inputEl.style.height = 'auto';
+  streamAIMessage(msg);
+}
+
+function retryChat(msg) {
+  addMessage('user', msg);
+  streamAIMessage(msg);
+}
+
+sendBtn.addEventListener('click', handleSend);
+inputEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } });
+inputEl.addEventListener('input', () => { inputEl.style.height = 'auto'; inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px'; });
+
+async function sendToSlack(summary) {
+  const statusLabel = summary.status === 'onboarding' ? '🟡 Being set up' : summary.status === 'live' ? '🟢 Live' : '⚪ Unknown';
+  const resLabel = summary.resolution === 'resolved' ? '✅ Resolved' : summary.resolution === 'escalated' ? '🔺 Escalated' : '⚠️ Unresolved';
+  const text = `🖨️ *Printer Support Session*\n\n*Property:* ${summary.property||'Unknown'}\n*Status:* ${statusLabel}\n*Issue:* ${summary.issue||'Not specified'}\n*Resolution:* ${resLabel}\n*Steps taken:* ${(summary.steps_taken||[]).map(s=>`• ${s}`).join('\n')||'None'}\n\n_${new Date().toLocaleString('en-GB',{dateStyle:'short',timeStyle:'short'})}_`;
+  try {
+    await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:300, mcp_servers:[{type:'url',url:'https://mcp.slack.com/mcp',name:'slack-mcp'}], messages:[{role:'user',content:`Send this to Slack channel ID ${SLACK_CHANNEL}:\n\n${text}\n\nUse slack_send_message. Do not change the message.`}] })
+    });
+  } catch(e) { console.error('Slack failed:', e); }
+}
+
+// --- Greeting ---
+(async () => {
+  await new Promise(r => setTimeout(r, 280));
+  const prop = sessionCtx.property;
+  const greeting = prop
+    ? `Hi ${prop} 👋 What's going on with your printer?`
+    : `Hi 👋 What's going on with your printer?`;
+  addMessage('ai', greeting);
+})();
+</script>
+</body>
+</html>
