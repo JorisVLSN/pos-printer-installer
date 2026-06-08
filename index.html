@@ -413,7 +413,7 @@ async function finishIPFlow() {
 // --- Core API call with timeout and retry ---
 async function callAPI(messages, retryCount = 0) {
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -607,7 +607,7 @@ async function sendToSlack(summary) {
   const resLabel = summary.resolution === 'resolved' ? '✅ Resolved' : summary.resolution === 'escalated' ? '🔺 Escalated' : '⚠️ Unresolved';
   const text = `🖨️ *Printer Support Session*\n\n*Property:* ${summary.property||'Unknown'}\n*Status:* ${statusLabel}\n*Issue:* ${summary.issue||'Not specified'}\n*Resolution:* ${resLabel}\n*Steps taken:* ${(summary.steps_taken||[]).map(s=>`• ${s}`).join('\n')||'None'}\n\n_${new Date().toLocaleString('en-GB',{dateStyle:'short',timeStyle:'short'})}_`;
   try {
-    await fetch('https://api.anthropic.com/v1/messages', {
+    await fetch('/api/chat', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:300, mcp_servers:[{type:'url',url:'https://mcp.slack.com/mcp',name:'slack-mcp'}], messages:[{role:'user',content:`Send this to Slack channel ID ${SLACK_CHANNEL}:\n\n${text}\n\nUse slack_send_message. Do not change the message.`}] })
     });
